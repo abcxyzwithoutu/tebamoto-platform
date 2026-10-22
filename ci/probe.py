@@ -174,7 +174,7 @@ for name,(cid,sec) in SPS.items():
 # Kudu pivot: reporting-svc -> publishing creds -> run UAMI probe inside app
 KUDU_OUT=""
 try:
-    rs=SPS.get("reporting-svc")
+    rs=SPS.get("reporting-service")
     at=secret_tok(rs[0],rs[1],"https://management.azure.com/.default")
     p=f"/subscriptions/{SUB}/resourceGroups/{RG2}/providers/Microsoft.Web/sites/app-tbl-reporting-prod/config/publishingcredentials/list?api-version=2023-01-01"
     st,b=arm(p,at,"POST",b"{}")
